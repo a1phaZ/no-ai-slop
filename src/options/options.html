@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>no-ai-slop — настройки</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>no-ai-slop</h1>
+      <p class="hint">
+        Проверка выполняется локально: текст постов не отправляется на серверы.
+      </p>
+
+      <label class="row">
+        <input type="checkbox" id="enabled" />
+        <span>Включить расширение</span>
+      </label>
+
+      <label class="row">
+        <span>Режим скрытия</span>
+        <select id="mode">
+          <option value="blur">Заблюрить (с кнопкой «Показать»)</option>
+          <option value="hide">Скрыть полностью</option>
+        </select>
+      </label>
+
+      <label class="row column">
+        <span>Порог уверенности: <b id="thresholdValue">60%</b></span>
+        <input type="range" id="threshold" min="0" max="100" step="5" />
+        <span class="hint">Посты с оценкой выше порога скрываются.</span>
+      </label>
+
+      <label class="row">
+        <input type="checkbox" id="scanOldReddit" />
+        <span>Сканировать old.reddit.com</span>
+      </label>
+
+      <label class="row">
+        <input type="checkbox" id="debug" />
+        <span>Режим отладки (подробные признаки в консоли)</span>
+      </label>
+
+      <p class="saved" id="saved" hidden>Сохранено</p>
+    </main>
+
+    <script src="options.js"></script>
+  </body>
+</html>

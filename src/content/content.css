@@ -1,0 +1,49 @@
+.nas-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 6px 10px;
+  font: 12px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #374151;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+}
+
+.nas-bar.nas-flagged {
+  color: #92400e;
+  background: #fef3c7;
+  border-color: #d97706;
+}
+
+.nas-bar .nas-score {
+  font-weight: 600;
+}
+
+.nas-bar button {
+  font: inherit;
+  cursor: pointer;
+  padding: 2px 8px;
+  color: #111827;
+  background: #fff;
+  border: 1px solid #9ca3af;
+  border-radius: 6px;
+}
+
+.nas-bar button:hover {
+  background: #e5e7eb;
+}
+
+.nas-bar button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.nas-blur {
+  filter: blur(8px);
+}
+
+.nas-hidden {
+  display: none !important;
+}

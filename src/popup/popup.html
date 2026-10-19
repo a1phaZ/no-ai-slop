@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>no-ai-slop</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>no-ai-slop</h1>
+      <label class="switch">
+        <input type="checkbox" id="enabled" />
+        <span>Включено</span>
+      </label>
+    </header>
+
+    <section class="counters">
+      <div class="counter">
+        <span class="value" id="hidden">0</span>
+        <span class="label">скрыто</span>
+      </div>
+      <div class="counter muted">
+        <span class="value" id="manual">0</span>
+        <span class="label">вручную</span>
+      </div>
+      <div class="counter">
+        <span class="value" id="scanned">0</span>
+        <span class="label">проверено</span>
+      </div>
+    </section>
+
+    <section class="controls">
+      <label class="row">
+        <span>Режим</span>
+        <select id="mode">
+          <option value="blur">Заблюрить</option>
+          <option value="hide">Скрыть</option>
+        </select>
+      </label>
+
+      <label class="row">
+        <span>Порог</span>
+        <span class="threshold-value" id="thresholdValue">60%</span>
+      </label>
+      <input type="range" id="threshold" min="0" max="100" step="5" />
+    </section>
+
+    <footer>
+      <button id="reset" type="button">Сбросить счётчики</button>
+      <button id="options" type="button">Настройки</button>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

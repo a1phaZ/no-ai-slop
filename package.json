@@ -1,0 +1,18 @@
+{
+  "name": "no-ai-slop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Chrome-расширение, скрывающее AI-сгенерированные посты на Reddit",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "test": "node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  }
+}

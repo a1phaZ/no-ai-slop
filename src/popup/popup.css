@@ -1,0 +1,105 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 260px;
+  margin: 0;
+  padding: 12px;
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #111827;
+  background: #ffffff;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.switch {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.counters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.counter {
+  flex: 1;
+  padding: 8px;
+  text-align: center;
+  background: #f3f4f6;
+  border-radius: 8px;
+}
+
+.counter.muted {
+  background: #fffbeb;
+}
+
+.counter .value {
+  display: block;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.counter .label {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.controls {
+  margin-bottom: 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+select,
+input[type="range"] {
+  width: 100%;
+}
+
+select {
+  width: auto;
+}
+
+.threshold-value {
+  font-weight: 600;
+  color: #4b5563;
+}
+
+footer {
+  display: flex;
+  gap: 8px;
+}
+
+footer button {
+  flex: 1;
+  padding: 6px 8px;
+  font: inherit;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+footer button:hover {
+  background: #f3f4f6;
+}
