@@ -1,5 +1,5 @@
 import { build, context } from 'esbuild';
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,6 +32,15 @@ async function copyStatic() {
 
   for (const [from, to] of staticFiles) {
     await cp(resolve(root, from), resolve(outdir, to));
+  }
+
+  const iconsSrc = resolve(root, 'src/icons');
+  const iconsDest = resolve(outdir, 'icons');
+  await mkdir(iconsDest, { recursive: true });
+  for (const name of await readdir(iconsSrc)) {
+    if (name.endsWith('.png')) {
+      await cp(resolve(iconsSrc, name), resolve(iconsDest, name));
+    }
   }
 }
 
