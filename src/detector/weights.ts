@@ -1,11 +1,12 @@
 // АВТОГЕНЕРАЦИЯ — не редактировать вручную.
-// Источник: training/train.mjs, датасет: training/dataset.jsonl
-// Обучено: 2026-10-19T08:10:21.462Z, примеров: 120
-// Метрики (test): accuracy=1 precision=1 recall=1 f1=1
+// Источник: training/train.mjs
+// Датасет: /home/alpha/no-ai-slop/training/dataset.jsonl
+// Обучено: 2026-10-19T10:23:39.264Z, примеров: 120
+// Метрики (test): accuracy=1 precision=1 recall=1 f1=1 brier=0.003832 ece=0.025086
 import type { ModelWeights } from './model-types.ts';
 export const WEIGHTS: ModelWeights = {
   "version": 1,
-  "trainedAt": "2026-10-19T08:10:21.462Z",
+  "trainedAt": "2026-10-19T10:23:39.264Z",
   "features": [
     "log_length",
     "log_words",
@@ -105,6 +106,8 @@ export const WEIGHTS: ModelWeights = {
     "accuracy": 1,
     "precision": 1,
     "recall": 1,
-    "f1": 1
+    "f1": 1,
+    "brier": 0.003832,
+    "ece": 0.025086
   }
 };

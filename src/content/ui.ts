@@ -1,22 +1,31 @@
-import type { HideMode } from '../shared/types.ts';
+import type { HideMode, LabelValue } from '../shared/types.ts';
 
 export interface ControlOptions {
   /** Оценка AI-вероятности 0..1. */
   score: number;
-  /** Пост уже помечен вручную. */
-  manual: boolean;
+  /** Текущая метка пользователя, если есть. */
+  label: LabelValue | null;
   /** Оценка выше порога — пост нужно заблюрить/скрыть. */
   hidden: boolean;
   mode: HideMode;
-  onFlag: () => void;
+  /**
+   * null — метка снята повторным кликом.
+   * ok=false — сохранить не удалось (например, лимит), состояние не меняем.
+   */
+  onLabel: (value: LabelValue | null) => { ok: boolean; hidden: boolean };
 }
 
 export interface Applied {
   bar: HTMLElement;
-  /** Переприменить режим скрытия (после смены настроек). */
-  applyHidden: () => void;
+  /** Переприменить скрытие с новым решением (после смены настроек или метки). */
+  setHidden: (hidden: boolean) => void;
   remove: () => void;
 }
+
+const LABELS: Record<LabelValue, string> = {
+  ai: 'Похоже на ИИ',
+  human: 'Похоже, человек',
+};
 
 function button(label: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement('button');
@@ -31,7 +40,7 @@ function button(label: string, onClick: () => void): HTMLButtonElement {
 }
 
 /**
- * Рисует контрол под постом: оценку и кнопку «Возможно AI».
+ * Рисует контрол под постом: оценку и две кнопки разметки.
  * Если пост выше порога — дополнительно размывает/скрывает его.
  */
 export function renderControl(el: HTMLElement, opts: ControlOptions): Applied {
@@ -42,16 +51,23 @@ export function renderControl(el: HTMLElement, opts: ControlOptions): Applied {
   score.className = 'nas-score';
   score.textContent = `AI ~${Math.round(opts.score * 100)}%`;
 
+  let hidden = opts.hidden;
+  let revealed = el.dataset.nasRevealed === '1';
+
   const clearHidden = () => el.classList.remove('nas-blur', 'nas-hidden');
   const applyHidden = () => {
-    if (el.dataset.nasRevealed === '1') return;
+    if (!hidden || revealed) {
+      clearHidden();
+      return;
+    }
     el.classList.toggle('nas-hidden', opts.mode === 'hide');
     el.classList.toggle('nas-blur', opts.mode === 'blur');
   };
 
   const reveal = () => {
-    clearHidden();
+    revealed = true;
     el.dataset.nasRevealed = '1';
+    clearHidden();
   };
 
   bar.append(score);
@@ -64,23 +80,45 @@ export function renderControl(el: HTMLElement, opts: ControlOptions): Applied {
     bar.append(show);
   }
 
-  const flag = button(opts.manual ? 'Помечено' : 'Возможно AI', () => {
-    reveal();
-    flag.disabled = true;
-    flag.textContent = 'Помечено';
-    bar.classList.add('nas-flagged');
-    opts.onFlag();
-  });
-  flag.disabled = opts.manual;
-  if (opts.manual) bar.classList.add('nas-flagged');
-  bar.append(flag);
+  let current = opts.label;
+  const buttons = {} as Record<LabelValue, HTMLButtonElement>;
 
+  const paint = () => {
+    for (const value of ['ai', 'human'] as LabelValue[]) {
+      buttons[value].setAttribute('aria-pressed', String(current === value));
+    }
+    bar.classList.toggle('nas-flagged', current === 'ai');
+    bar.classList.toggle('nas-human', current === 'human');
+  };
+
+  const setLabel = (value: LabelValue) => {
+    const next = current === value ? null : value;
+    const result = opts.onLabel(next);
+    if (!result.ok) return;
+    current = next;
+    hidden = result.hidden;
+    paint();
+    applyHidden();
+    if (current === 'human') reveal();
+  };
+
+  for (const value of ['ai', 'human'] as LabelValue[]) {
+    const b = button(LABELS[value], () => setLabel(value));
+    b.className = `nas-label nas-label-${value}`;
+    buttons[value] = b;
+    bar.append(b);
+  }
+
+  paint();
   el.parentElement?.insertBefore(bar, el);
-  if (opts.hidden) applyHidden();
+  applyHidden();
 
   return {
     bar,
-    applyHidden,
+    setHidden: (next) => {
+      hidden = next;
+      applyHidden();
+    },
     remove: () => {
       clearHidden();
       bar.remove();

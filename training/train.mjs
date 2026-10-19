@@ -1,6 +1,10 @@
-// Обучение линейной модели (логистическая регрессия) на training/dataset.jsonl.
-// Пишет src/detector/weights.ts. Запуск: node training/train.mjs
-import { readFileSync, writeFileSync } from 'node:fs';
+// Обучение линейной модели (логистическая регрессия) на собранном датасете.
+//
+//   node training/train.mjs
+//
+// Читает data/dataset.jsonl, если он есть; иначе — seed-датасет training/dataset.jsonl.
+// Пишет src/detector/weights.ts и печатает метрики по срезам + калибровку.
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,12 +12,11 @@ import { extractFeatures } from '../src/detector/features.ts';
 import { FEATURE_NAMES, toVector } from '../src/detector/vector.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const datasetPath = resolve(root, 'training/dataset.jsonl');
+const dataPath = resolve(root, 'data/dataset.jsonl');
+const seedPath = resolve(root, 'training/dataset.jsonl');
 const outPath = resolve(root, 'src/detector/weights.ts');
 
 const SEED = 20261019;
-const TRAIN_RATIO = 0.6;
-const VAL_RATIO = 0.2;
 const EPOCHS = 4000;
 const LR = 0.35;
 const L2 = 0.01;
@@ -58,7 +61,32 @@ function metrics(scores, labels, threshold) {
   return { tp, fp, tn, fn, precision, recall, f1, accuracy };
 }
 
-const rows = readFileSync(datasetPath, 'utf8')
+/** Доля ошибки калибровки: насколько средняя уверенность расходится с точностью. */
+function calibration(scores, labels) {
+  const bins = 10;
+  const stats = Array.from({ length: bins }, () => ({ count: 0, confidence: 0, positive: 0 }));
+  let brier = 0;
+  for (let i = 0; i < scores.length; i++) {
+    brier += (scores[i] - labels[i]) ** 2;
+    const bin = Math.min(bins - 1, Math.floor(scores[i] * bins));
+    stats[bin].count += 1;
+    stats[bin].confidence += scores[i];
+    stats[bin].positive += labels[i];
+  }
+  let ece = 0;
+  for (const bin of stats) {
+    if (bin.count === 0) continue;
+    const confidence = bin.confidence / bin.count;
+    const accuracy = bin.positive / bin.count;
+    ece += (bin.count / scores.length) * Math.abs(confidence - accuracy);
+  }
+  return { brier: brier / scores.length, ece };
+}
+
+const source = existsSync(dataPath) ? dataPath : seedPath;
+console.log(`датасет: ${source}`);
+
+const rows = readFileSync(source, 'utf8')
   .split('\n')
   .map((line) => line.trim())
   .filter(Boolean)
@@ -66,27 +94,51 @@ const rows = readFileSync(datasetPath, 'utf8')
 
 if (rows.length === 0) throw new Error('датасет пуст');
 
-const X = rows.map((row) => toVector(extractFeatures(row.text)));
+if (source === dataPath && rows.length < 500) {
+  console.warn(
+    `ВНИМАНИЕ: собранный датасет маленький (${rows.length}). Метрики будут нестабильны — добавьте данных.`,
+  );
+}
+
+const texts = rows.map((row) => `${row.title ?? ''}\n${row.text ?? ''}`.trim());
+const X = texts.map((text) => toVector(extractFeatures(text)));
 const y = rows.map((row) => row.label);
 const D = FEATURE_NAMES.length;
 
-const rand = mulberry32(SEED);
-const order = X.map((_, i) => i);
-for (let i = order.length - 1; i > 0; i--) {
-  const j = Math.floor(rand() * (i + 1));
-  [order[i], order[j]] = [order[j], order[i]];
-}
-const shuffledX = order.map((i) => X[i]);
-const shuffledY = order.map((i) => y[i]);
+// Сплиты: если они уже заданы в датасете — уважаем группы, иначе режем случайно.
+const hasSplits = rows.some((row) => row.split);
+let trainIdx;
+let valIdx;
+let testIdx;
 
-const nTrain = Math.floor(rows.length * TRAIN_RATIO);
-const nVal = Math.floor(rows.length * VAL_RATIO);
-const trainX = shuffledX.slice(0, nTrain);
-const trainY = shuffledY.slice(0, nTrain);
-const valX = shuffledX.slice(nTrain, nTrain + nVal);
-const valY = shuffledY.slice(nTrain, nTrain + nVal);
-const testX = shuffledX.slice(nTrain + nVal);
-const testY = shuffledY.slice(nTrain + nVal);
+if (hasSplits) {
+  trainIdx = rows.map((_, i) => i).filter((i) => rows[i].split === 'train');
+  valIdx = rows.map((_, i) => i).filter((i) => rows[i].split === 'val');
+  testIdx = rows.map((_, i) => i).filter((i) => rows[i].split === 'test');
+} else {
+  const rand = mulberry32(SEED);
+  const order = X.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const nTrain = Math.floor(rows.length * 0.6);
+  const nVal = Math.floor(rows.length * 0.2);
+  trainIdx = order.slice(0, nTrain);
+  valIdx = order.slice(nTrain, nTrain + nVal);
+  testIdx = order.slice(nTrain + nVal);
+}
+
+if (trainIdx.length === 0 || valIdx.length === 0 || testIdx.length === 0) {
+  throw new Error(`некорректные сплиты: train=${trainIdx.length}, val=${valIdx.length}, test=${testIdx.length}`);
+}
+
+const trainX = trainIdx.map((i) => X[i]);
+const trainY = trainIdx.map((i) => y[i]);
+const valX = valIdx.map((i) => X[i]);
+const valY = valIdx.map((i) => y[i]);
+const testX = testIdx.map((i) => X[i]);
+const testY = testIdx.map((i) => y[i]);
 
 const mean = new Array(D).fill(0);
 const std = new Array(D).fill(0);
@@ -150,6 +202,7 @@ const testScores = nTestX.map(scoreWith);
 const trainMetrics = metrics(trainScores, trainY, 0.5);
 const valMetrics = metrics(valScores, valY, 0.5);
 const testMetrics = metrics(testScores, testY, 0.5);
+const testCalibration = calibration(testScores, testY);
 
 const round = (v) => Number(v.toFixed(6));
 const payload = {
@@ -171,14 +224,17 @@ const payload = {
     precision: round(testMetrics.precision),
     recall: round(testMetrics.recall),
     f1: round(testMetrics.f1),
+    brier: round(testCalibration.brier),
+    ece: round(testCalibration.ece),
   },
 };
 
 const header = [
   '// АВТОГЕНЕРАЦИЯ — не редактировать вручную.',
-  '// Источник: training/train.mjs, датасет: training/dataset.jsonl',
+  '// Источник: training/train.mjs',
+  `// Датасет: ${source}`,
   `// Обучено: ${payload.trainedAt}, примеров: ${rows.length}`,
-  `// Метрики (test): accuracy=${payload.metrics.accuracy} precision=${payload.metrics.precision} recall=${payload.metrics.recall} f1=${payload.metrics.f1}`,
+  `// Метрики (test): accuracy=${payload.metrics.accuracy} precision=${payload.metrics.precision} recall=${payload.metrics.recall} f1=${payload.metrics.f1} brier=${payload.metrics.brier} ece=${payload.metrics.ece}`,
   "import type { ModelWeights } from './model-types.ts';",
   '',
 ].join('\n');
@@ -191,15 +247,45 @@ writeFileSync(
 const fmt = (m) =>
   `acc=${m.accuracy.toFixed(3)} prec=${m.precision.toFixed(3)} rec=${m.recall.toFixed(3)} f1=${m.f1.toFixed(3)} (tp=${m.tp} fp=${m.fp} tn=${m.tn} fn=${m.fn})`;
 
-console.log(`датасет: ${rows.length} (train ${trainX.length} / val ${valX.length} / test ${testX.length})`);
+console.log(`примеров: ${rows.length} (train ${trainX.length} / val ${valX.length} / test ${testX.length})`);
 console.log(`выбранный порог (val): ${bestThreshold}`);
 console.log(`train: ${fmt(trainMetrics)}`);
 console.log(`val:   ${fmt(valMetrics)}`);
 console.log(`test:  ${fmt(testMetrics)}`);
-console.log(`веса -> src/detector/weights.ts`);
+console.log(`калибровка (test): brier=${testCalibration.brier.toFixed(3)} ece=${testCalibration.ece.toFixed(3)}`);
+
+// Метрики по срезам — чтобы «1.0» не прятала провал на русском или на humanized.
+const testScoreByIndex = new Map(testIdx.map((i, k) => [i, testScores[k]]));
+
+function slice(name, predicate) {
+  const idx = testIdx.filter((i) => predicate(rows[i]));
+  if (idx.length === 0) return;
+  const labels = idx.map((i) => y[i]);
+  if (labels.every((v) => v === labels[0])) {
+    console.log(`  ${name} (n=${idx.length}): только один класс — метрика не показательна`);
+    return;
+  }
+  const scores = idx.map((i) => testScoreByIndex.get(i));
+  const m = metrics(scores, labels, 0.5);
+  console.log(`  ${name} (n=${idx.length}): ${fmt(m)}`);
+}
+
+console.log('срезы (test):');
+slice('lang=ru', (row) => (row.lang ?? 'other') === 'ru');
+slice('lang=en', (row) => (row.lang ?? 'other') === 'en');
+slice('len<200', (row) => String(row.text ?? '').length < 200);
+slice('len 200-800', (row) => {
+  const len = String(row.text ?? '').length;
+  return len >= 200 && len <= 800;
+});
+slice('len>800', (row) => String(row.text ?? '').length > 800);
+for (const sourceName of [...new Set(rows.map((r) => r.source ?? 'unknown'))]) {
+  slice(`source=${sourceName}`, (row) => (row.source ?? 'unknown') === sourceName);
+}
 
 const top = weights
   .map((w, j) => ({ name: FEATURE_NAMES[j], w }))
   .sort((a, b) => Math.abs(b.w) - Math.abs(a.w))
   .slice(0, 8);
 console.log('топ признаков:', top.map((t) => `${t.name}=${t.w.toFixed(2)}`).join(', '));
+console.log('веса -> src/detector/weights.ts');

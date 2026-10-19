@@ -1,7 +1,7 @@
 import type { Stats } from './types.ts';
 
 export type Message =
-  | { type: 'stats:add'; hidden?: number; manual?: number; scanned?: number }
+  | { type: 'stats:add'; hidden?: number; manual?: number; labeled?: number; scanned?: number }
   | { type: 'stats:get' }
   | { type: 'stats:reset' };
 

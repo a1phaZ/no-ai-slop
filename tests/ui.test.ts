@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Window } from 'happy-dom';
 
 import { renderControl } from '../src/content/ui.ts';
+import type { LabelValue } from '../src/shared/types.ts';
 
 function setup() {
   const window = new Window();
@@ -20,99 +21,147 @@ function buttons(bar: unknown): HTMLButtonElement[] {
   return Array.from((bar as HTMLElement).querySelectorAll('button'));
 }
 
-test('контрол с оценкой и кнопкой рисуется даже без скрытия', () => {
-  const { post } = setup();
-  const info = renderControl(post as unknown as HTMLElement, {
+function labelButton(bar: unknown, text: string): HTMLButtonElement | undefined {
+  return buttons(bar).find((b) => b.textContent === text);
+}
+
+function render(
+  post: HTMLElement,
+  overrides: Partial<Parameters<typeof renderControl>[1]> = {},
+  seen: Array<LabelValue | null> = [],
+  hiddenAfter: boolean | null = null,
+) {
+  return renderControl(post, {
     score: 0.31,
-    manual: false,
+    label: null,
     hidden: false,
     mode: 'blur',
-    onFlag: () => {},
+    onLabel: (value) => {
+      seen.push(value);
+      return { ok: true, hidden: hiddenAfter ?? false };
+    },
+    ...overrides,
   });
+}
+
+test('контрол рисует оценку и две кнопки разметки', () => {
+  const { post } = setup();
+  const info = render(post as unknown as HTMLElement);
 
   assert.match(info.bar.textContent ?? '', /AI ~31%/);
-  assert.equal(buttons(info.bar).length, 1);
-  assert.equal(buttons(info.bar)[0].textContent, 'Возможно AI');
+  assert.ok(labelButton(info.bar, 'Похоже на ИИ'));
+  assert.ok(labelButton(info.bar, 'Похоже, человек'));
   assert.equal(post.classList.contains('nas-blur'), false);
-  assert.equal(post.classList.contains('nas-hidden'), false);
 });
 
 test('режим hide скрывает пост, режим blur — размывает', () => {
   const hide = setup();
-  renderControl(hide.post as unknown as HTMLElement, {
-    score: 0.9,
-    manual: false,
-    hidden: true,
-    mode: 'hide',
-    onFlag: () => {},
-  });
+  render(hide.post as unknown as HTMLElement, { score: 0.9, hidden: true, mode: 'hide' });
   assert.equal(hide.post.classList.contains('nas-hidden'), true);
 
   const blur = setup();
-  renderControl(blur.post as unknown as HTMLElement, {
-    score: 0.9,
-    manual: false,
-    hidden: true,
-    mode: 'blur',
-    onFlag: () => {},
-  });
+  render(blur.post as unknown as HTMLElement, { score: 0.9, hidden: true, mode: 'blur' });
   assert.equal(blur.post.classList.contains('nas-blur'), true);
 });
 
 test('«Показать» снимает скрытие и убирает себя', () => {
   const { post } = setup();
-  const info = renderControl(post as unknown as HTMLElement, {
-    score: 0.9,
-    manual: false,
-    hidden: true,
-    mode: 'blur',
-    onFlag: () => {},
-  });
+  const info = render(post as unknown as HTMLElement, { score: 0.9, hidden: true });
 
-  const show = buttons(info.bar).find((b) => b.textContent === 'Показать');
+  const show = labelButton(info.bar, 'Показать');
   assert.ok(show, 'кнопка «Показать» должна быть');
   show.click();
 
   assert.equal(post.classList.contains('nas-blur'), false);
   assert.equal(post.dataset.nasRevealed, '1');
-  assert.equal(buttons(info.bar).some((b) => b.textContent === 'Показать'), false);
+  assert.equal(labelButton(info.bar, 'Показать'), undefined);
 });
 
-test('«Возможно AI» вызывает onFlag, помечает и блокирует кнопку', () => {
+test('«Показать» не создаёт метку', () => {
   const { post } = setup();
-  let flags = 0;
-  const info = renderControl(post as unknown as HTMLElement, {
-    score: 0.9,
-    manual: false,
-    hidden: true,
-    mode: 'blur',
-    onFlag: () => {
-      flags += 1;
-    },
-  });
+  const seen: Array<LabelValue | null> = [];
+  const info = render(post as unknown as HTMLElement, { score: 0.9, hidden: true }, seen);
 
-  const flag = buttons(info.bar).find((b) => b.textContent === 'Возможно AI');
-  assert.ok(flag, 'кнопка «Возможно AI» должна быть');
-  flag.click();
-
-  assert.equal(flags, 1);
-  assert.equal(flag.disabled, true);
-  assert.equal(flag.textContent, 'Помечено');
-  assert.equal(info.bar.classList.contains('nas-flagged'), true);
-  assert.equal(post.classList.contains('nas-blur'), false);
+  labelButton(info.bar, 'Показать')?.click();
+  assert.deepEqual(seen, []);
 });
 
-test('уже помеченный пост: кнопка в состоянии «Помечено» и неактивна', () => {
+test('клик по «Похоже на ИИ» ставит метку и подсвечивает кнопку', () => {
+  const { post } = setup();
+  const seen: Array<LabelValue | null> = [];
+  const info = render(post as unknown as HTMLElement, {}, seen);
+
+  labelButton(info.bar, 'Похоже на ИИ')?.click();
+
+  assert.deepEqual(seen, ['ai']);
+  assert.equal(labelButton(info.bar, 'Похоже на ИИ')?.getAttribute('aria-pressed'), 'true');
+  assert.equal(labelButton(info.bar, 'Похоже, человек')?.getAttribute('aria-pressed'), 'false');
+  assert.equal(info.bar.classList.contains('nas-flagged'), true);
+});
+
+test('кнопки взаимоисключающие', () => {
+  const { post } = setup();
+  const seen: Array<LabelValue | null> = [];
+  const info = render(post as unknown as HTMLElement, {}, seen);
+
+  labelButton(info.bar, 'Похоже на ИИ')?.click();
+  labelButton(info.bar, 'Похоже, человек')?.click();
+
+  assert.deepEqual(seen, ['ai', 'human']);
+  assert.equal(labelButton(info.bar, 'Похоже на ИИ')?.getAttribute('aria-pressed'), 'false');
+  assert.equal(labelButton(info.bar, 'Похоже, человек')?.getAttribute('aria-pressed'), 'true');
+  assert.equal(info.bar.classList.contains('nas-human'), true);
+  assert.equal(info.bar.classList.contains('nas-flagged'), false);
+});
+
+test('повторный клик снимает метку', () => {
+  const { post } = setup();
+  const seen: Array<LabelValue | null> = [];
+  const info = render(post as unknown as HTMLElement, {}, seen);
+
+  labelButton(info.bar, 'Похоже на ИИ')?.click();
+  labelButton(info.bar, 'Похоже на ИИ')?.click();
+
+  assert.deepEqual(seen, ['ai', null]);
+  assert.equal(labelButton(info.bar, 'Похоже на ИИ')?.getAttribute('aria-pressed'), 'false');
+});
+
+test('пост с готовой меткой отрисован в нужном состоянии', () => {
+  const { post } = setup();
+  const info = render(post as unknown as HTMLElement, { label: 'human' });
+
+  assert.equal(labelButton(info.bar, 'Похоже, человек')?.getAttribute('aria-pressed'), 'true');
+  assert.equal(info.bar.classList.contains('nas-human'), true);
+});
+
+test('если сохранение не удалось, состояние кнопок не меняется', () => {
   const { post } = setup();
   const info = renderControl(post as unknown as HTMLElement, {
     score: 0.2,
-    manual: true,
+    label: null,
     hidden: false,
     mode: 'blur',
-    onFlag: () => {},
+    onLabel: () => ({ ok: false, hidden: false }),
   });
 
-  const flag = buttons(info.bar)[0];
-  assert.equal(flag.textContent, 'Помечено');
-  assert.equal(flag.disabled, true);
+  labelButton(info.bar, 'Похоже на ИИ')?.click();
+  assert.equal(labelButton(info.bar, 'Похоже на ИИ')?.getAttribute('aria-pressed'), 'false');
+});
+
+test('метка «человек» показывает заблюренный пост', () => {
+  const { post } = setup();
+  const seen: Array<LabelValue | null> = [];
+  const info = render(post as unknown as HTMLElement, { score: 0.9, hidden: true }, seen, false);
+
+  labelButton(info.bar, 'Похоже, человек')?.click();
+  assert.equal(post.classList.contains('nas-blur'), false);
+});
+
+test('метка «ИИ» скрывает видимый пост, если решение изменилось', () => {
+  const { post } = setup();
+  const seen: Array<LabelValue | null> = [];
+  const info = render(post as unknown as HTMLElement, { score: 0.6, hidden: false }, seen, true);
+
+  labelButton(info.bar, 'Похоже на ИИ')?.click();
+  assert.equal(post.classList.contains('nas-blur'), true);
 });

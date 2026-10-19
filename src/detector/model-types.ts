@@ -8,6 +8,10 @@ export interface ModelMetrics {
   precision: number;
   recall: number;
   f1: number;
+  /** Среднеквадратичная ошибка вероятностей — калибровка. */
+  brier?: number;
+  /** Expected Calibration Error. */
+  ece?: number;
 }
 
 /** Веса линейной модели: стандартизация + логистическая регрессия. */

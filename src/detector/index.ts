@@ -5,6 +5,8 @@ import { scoreText } from './heuristics.ts';
 
 export type DetectorMode = 'model' | 'heuristics';
 
+export { MODEL_VERSION } from './model.ts';
+
 /**
  * Единая точка входа детектора.
  * Пытается применить модель; при её отсутствии/ошибке падает на эвристики.

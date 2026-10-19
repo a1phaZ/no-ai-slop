@@ -12,7 +12,7 @@ async function refreshStats(): Promise<void> {
   const response = await sendMessage<StatsResponse>({ type: 'stats:get' });
   if (!response) return;
   el('hidden').textContent = String(response.stats.hidden);
-  el('manual').textContent = String(response.stats.manual);
+  el('labeled').textContent = String(response.stats.labeled);
   el('scanned').textContent = String(response.stats.scanned);
 }
 

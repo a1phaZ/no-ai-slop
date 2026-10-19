@@ -8,6 +8,9 @@ export function sigmoid(z: number): number {
   return 1 / (1 + Math.exp(-z));
 }
 
+/** Версия обученной модели — пишется в метки пользователей. */
+export const MODEL_VERSION = WEIGHTS.version;
+
 /** Модель готова к использованию, если её размерность совпадает с текущим вектором признаков. */
 export function modelAvailable(weights: ModelWeights = WEIGHTS): boolean {
   return (

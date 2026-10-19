@@ -1,8 +1,17 @@
 import { loadSettings, normalizeSettings } from '../shared/settings.ts';
-import { loadCache, saveCache } from '../shared/storage.ts';
+import { loadCache, loadLabels, saveCache, saveLabels, upsertLabel } from '../shared/storage.ts';
+import { buildLabelEntry } from '../shared/labels.ts';
 import { sendMessage } from '../shared/messages.ts';
-import { DEFAULT_SETTINGS, type CacheEntry, type DetectionResult, type Settings } from '../shared/types.ts';
-import { detect } from '../detector/index.ts';
+import {
+  DEFAULT_SETTINGS,
+  DETECTOR_VERSION,
+  type CacheEntry,
+  type DetectionResult,
+  type LabelEntry,
+  type LabelValue,
+  type Settings,
+} from '../shared/types.ts';
+import { MODEL_VERSION, detect } from '../detector/index.ts';
 import { cacheKey, isFresh, makeEntry } from '../detector/cache.ts';
 import { collectPosts, type PostNode } from './reddit.ts';
 import { renderControl, type Applied } from './ui.ts';
@@ -11,10 +20,13 @@ import { renderControl, type Applied } from './ui.ts';
 const MANUAL_FACTOR = 0.6;
 const CACHE_FLUSH_MS = 1000;
 const RESCAN_DEBOUNCE_MS = 300;
+/** На сколько постов ниже оценка считается «подтверждённой меткой». */
+const LABEL_SCORE_FACTOR = 0.85;
 
 interface Runtime {
   settings: Settings;
   cache: Record<string, CacheEntry>;
+  labels: Map<string, LabelEntry>;
 }
 
 let runtime: Runtime;
@@ -56,19 +68,59 @@ function analyze(text: string): Analysis {
   return { entry, fresh: result };
 }
 
-function shouldHide(entry: CacheEntry): boolean {
-  const threshold = entry.manual
-    ? runtime.settings.threshold * MANUAL_FACTOR
-    : runtime.settings.threshold;
-  return entry.score >= threshold;
+/**
+ * Порог для поста с учётом явной метки:
+ * «ИИ» — мягче (прячем увереннее), «человек» — жёстче (показываем).
+ */
+function thresholdFor(label: LabelValue | null): number {
+  const base = runtime.settings.threshold;
+  if (label === 'ai') return base * MANUAL_FACTOR;
+  if (label === 'human') return Math.min(1, base / LABEL_SCORE_FACTOR);
+  return base;
 }
 
-function flagPost(entry: CacheEntry): void {
-  if (entry.manual) return;
-  runtime.cache[entry.hash] = { ...entry, manual: true, checkedAt: Date.now() };
-  persistCacheSoon();
-  void sendMessage({ type: 'stats:add', manual: 1 });
-  log('помечено вручную', entry.hash);
+function shouldHide(entry: CacheEntry, label: LabelValue | null): boolean {
+  return entry.score >= thresholdFor(label);
+}
+
+/**
+ * Сохраняет метку. Возвращает false, если не удалось (лимит хранилища).
+ * Текст поста сохраняется только здесь — для будущего датасета.
+ */
+function labelPost(post: PostNode, entry: CacheEntry, value: LabelValue | null): boolean {
+  const previous = runtime.labels.get(entry.hash);
+  const labelEntry = buildLabelEntry({
+    hash: entry.hash,
+    title: post.title,
+    text: post.body,
+    label: value ?? previous?.label ?? 'human',
+    score: entry.score,
+    detectorVersion: DETECTOR_VERSION,
+    modelVersion: MODEL_VERSION,
+  });
+
+  const result = upsertLabel([...runtime.labels.values()], labelEntry, value);
+  if (!result.ok) {
+    log('лимит меток: сохраните экспорт и очистите хранилище');
+    return false;
+  }
+
+  runtime.labels = new Map(result.labels.map((l) => [l.hash, l]));
+  void saveLabels(result.labels);
+
+  const wasAi = previous?.label === 'ai' ? 1 : 0;
+  const isAi = value === 'ai' ? 1 : 0;
+  const wasLabeled = previous ? 1 : 0;
+  const isLabeled = value ? 1 : 0;
+
+  void sendMessage({
+    type: 'stats:add',
+    labeled: isLabeled - wasLabeled,
+    manual: isAi - wasAi,
+  });
+
+  log(value === null ? 'метка снята' : `метка: ${value}`, entry.hash);
+  return true;
 }
 
 function processPost(post: PostNode): void {
@@ -81,14 +133,18 @@ function processPost(post: PostNode): void {
   if (text.length === 0) return;
 
   const { entry, fresh } = analyze(text);
-  const hidden = shouldHide(entry);
+  const label = runtime.labels.get(entry.hash)?.label ?? null;
+  const hidden = shouldHide(entry, label);
 
   const info = renderControl(post.el, {
     score: entry.score,
-    manual: entry.manual,
+    label,
     hidden,
     mode: runtime.settings.mode,
-    onFlag: () => flagPost(entry),
+    onLabel: (value) => {
+      if (!labelPost(post, entry, value)) return { ok: false, hidden };
+      return { ok: true, hidden: shouldHide(entry, value) };
+    },
   });
   applied.set(post.el, info);
 
@@ -98,6 +154,7 @@ function processPost(post: PostNode): void {
     post.id || '?',
     `score=${entry.score.toFixed(2)}`,
     hidden ? '(скрыт)' : '',
+    label ? `[метка: ${label}]` : '',
     fresh
       ? `[${fresh.source}] ${fresh.signals.map((s) => s.id).join(', ')}`
       : '[кэш]',
@@ -169,16 +226,25 @@ function watchSettings(): void {
 
 async function init(): Promise<void> {
   try {
-    runtime = { settings: await loadSettings(), cache: await loadCache() };
+    const [settings, cache, labels] = await Promise.all([
+      loadSettings(),
+      loadCache(),
+      loadLabels(),
+    ]);
+    runtime = {
+      settings,
+      cache,
+      labels: new Map(labels.map((l) => [l.hash, l])),
+    };
   } catch (err) {
-    console.warn('[no-ai-slop] не удалось загрузить настройки, беру значения по умолчанию', err);
-    runtime = { settings: { ...DEFAULT_SETTINGS }, cache: {} };
+    console.warn('[no-ai-slop] не удалось загрузить данные, беру значения по умолчанию', err);
+    runtime = { settings: { ...DEFAULT_SETTINGS }, cache: {}, labels: new Map() };
   }
 
   if (runtime.settings.enabled) scanAll();
   observe();
   watchSettings();
-  log('инициализировано');
+  log('инициализировано', `меток: ${runtime.labels.size}`);
 }
 
 void init();

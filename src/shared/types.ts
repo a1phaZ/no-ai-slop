@@ -42,15 +42,42 @@ export interface DetectionResult {
 export interface CacheEntry {
   hash: string;
   score: number;
-  /** Помечено пользователем кнопкой «Возможно AI». */
+  /** Устарело: ручные метки теперь живут в отдельном хранилище `labels`. */
   manual: boolean;
   checkedAt: number;
   version: number;
 }
 
+/** Явная метка пользователя. */
+export type LabelValue = 'ai' | 'human';
+
+export type LabelLanguage = 'en' | 'ru' | 'other';
+
+/**
+ * Размеченный пользователем пост — единица будущего датасета.
+ * Хранится отдельно от кэша: кэш режется по свежести, метки терять нельзя.
+ */
+export interface LabelEntry {
+  /** fnv1a(normalize(title + "\n" + body)) — тот же ключ, что и у кэша. */
+  hash: string;
+  title: string;
+  text: string;
+  label: LabelValue;
+  /** Оценка детектора в момент разметки. */
+  score: number;
+  detectorVersion: number;
+  modelVersion: number;
+  lang: LabelLanguage;
+  length: number;
+  createdAt: number;
+}
+
 export interface Stats {
   hidden: number;
+  /** Посты, размеченные как «похоже на ИИ». */
   manual: number;
+  /** Всего меток (ИИ + человек). */
+  labeled: number;
   scanned: number;
 }
 

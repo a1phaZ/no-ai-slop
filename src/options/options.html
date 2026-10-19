@@ -49,6 +49,29 @@
         <span>Режим отладки (подробные признаки в консоли)</span>
       </label>
 
+      <h2>Разметка для датасета</h2>
+      <p class="hint">
+        Кнопки «Похоже на ИИ» и «Похоже, человек» сохраняют текст поста
+        <b>только в этом браузере</b>. Экспорт — единственный способ вынести данные наружу.
+      </p>
+
+      <div class="row column">
+        <span>Сохранено меток: <b id="labelsCount">0</b> из <b id="labelsMax">2000</b></span>
+        <progress id="labelsProgress" max="2000" value="0"></progress>
+        <p class="warn" id="labelsWarning" hidden>
+          Лимит достигнут: новые метки не сохраняются. Экспортируйте и очистите хранилище.
+        </p>
+        <p class="hint" id="labelsHint" hidden>Скоро лимит — стоит сделать экспорт.</p>
+      </div>
+
+      <div class="row buttons">
+        <button type="button" id="exportLabels">Экспорт JSONL</button>
+        <button type="button" id="importLabels">Импорт JSONL</button>
+        <button type="button" id="clearLabels" class="danger">Очистить метки</button>
+      </div>
+      <input type="file" id="importFile" accept=".jsonl,.json,application/jsonl,application/json" hidden />
+      <p class="saved" id="labelsStatus" hidden></p>
+
       <p class="saved" id="saved" hidden>Сохранено</p>
     </main>
 
