@@ -25,6 +25,14 @@
         </select>
       </label>
 
+      <label class="row">
+        <span>Детектор</span>
+        <select id="detector">
+          <option value="model">Модель (по умолчанию)</option>
+          <option value="heuristics">Эвристики</option>
+        </select>
+      </label>
+
       <label class="row column">
         <span>Порог уверенности: <b id="thresholdValue">60%</b></span>
         <input type="range" id="threshold" min="0" max="100" step="5" />

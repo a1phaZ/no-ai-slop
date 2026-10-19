@@ -1,8 +1,8 @@
 import { loadSettings, normalizeSettings } from '../shared/settings.ts';
 import { loadCache, saveCache } from '../shared/storage.ts';
 import { sendMessage } from '../shared/messages.ts';
-import { DEFAULT_SETTINGS, type CacheEntry, type Settings } from '../shared/types.ts';
-import { scoreText } from '../detector/heuristics.ts';
+import { DEFAULT_SETTINGS, type CacheEntry, type DetectionResult, type Settings } from '../shared/types.ts';
+import { detect } from '../detector/index.ts';
 import { cacheKey, isFresh, makeEntry } from '../detector/cache.ts';
 import { collectPosts, type PostNode } from './reddit.ts';
 import { renderControl, type Applied } from './ui.ts';
@@ -39,15 +39,21 @@ function persistCacheSoon(): void {
   }, CACHE_FLUSH_MS);
 }
 
-function analyze(text: string): CacheEntry {
+interface Analysis {
+  entry: CacheEntry;
+  fresh: DetectionResult | null;
+}
+
+function analyze(text: string): Analysis {
   const key = cacheKey(text);
-  let entry = runtime.cache[key];
-  if (!isFresh(entry)) {
-    entry = makeEntry(key, scoreText(text).score);
-    runtime.cache[key] = entry;
-    persistCacheSoon();
-  }
-  return entry;
+  const cached = runtime.cache[key];
+  if (isFresh(cached)) return { entry: cached, fresh: null };
+
+  const result = detect(text, runtime.settings.detector);
+  const entry = makeEntry(key, result.score);
+  runtime.cache[key] = entry;
+  persistCacheSoon();
+  return { entry, fresh: result };
 }
 
 function shouldHide(entry: CacheEntry): boolean {
@@ -74,7 +80,7 @@ function processPost(post: PostNode): void {
   const text = `${post.title}\n${post.body}`.trim();
   if (text.length === 0) return;
 
-  const entry = analyze(text);
+  const { entry, fresh } = analyze(text);
   const hidden = shouldHide(entry);
 
   const info = renderControl(post.el, {
@@ -87,7 +93,15 @@ function processPost(post: PostNode): void {
   applied.set(post.el, info);
 
   void sendMessage({ type: 'stats:add', scanned: 1 });
-  log('пост', post.id || '?', 'score=', entry.score.toFixed(2), hidden ? '(скрыт)' : '');
+  log(
+    'пост',
+    post.id || '?',
+    `score=${entry.score.toFixed(2)}`,
+    hidden ? '(скрыт)' : '',
+    fresh
+      ? `[${fresh.source}] ${fresh.signals.map((s) => s.id).join(', ')}`
+      : '[кэш]',
+  );
 
   if (hidden) {
     const countKey = post.id || entry.hash;
@@ -137,6 +151,7 @@ function watchSettings(): void {
     const structureChanged =
       next.mode !== prev.mode ||
       next.threshold !== prev.threshold ||
+      next.detector !== prev.detector ||
       next.scanOldReddit !== prev.scanOldReddit;
     const enabledChanged = next.enabled !== prev.enabled;
     runtime.settings = next;

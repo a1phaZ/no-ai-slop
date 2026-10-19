@@ -1,5 +1,5 @@
 import { loadSettings, saveSettings } from '../shared/settings.ts';
-import type { HideMode, Settings } from '../shared/types.ts';
+import type { DetectorMode, HideMode, Settings } from '../shared/types.ts';
 
 function el<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -27,6 +27,7 @@ async function render(): Promise<void> {
 
   el<HTMLInputElement>('enabled').checked = settings.enabled;
   el<HTMLSelectElement>('mode').value = settings.mode;
+  el<HTMLSelectElement>('detector').value = settings.detector;
   el<HTMLInputElement>('scanOldReddit').checked = settings.scanOldReddit;
   el<HTMLInputElement>('debug').checked = settings.debug;
 
@@ -42,6 +43,10 @@ function wire(): void {
 
   el<HTMLSelectElement>('mode').addEventListener('change', (e) => {
     persist({ mode: (e.target as HTMLSelectElement).value as HideMode });
+  });
+
+  el<HTMLSelectElement>('detector').addEventListener('change', (e) => {
+    persist({ detector: (e.target as HTMLSelectElement).value as DetectorMode });
   });
 
   el<HTMLInputElement>('scanOldReddit').addEventListener('change', (e) => {

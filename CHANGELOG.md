@@ -3,6 +3,21 @@
 Все заметные изменения проекта. Формат — по [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
 версии — по [SemVer](https://semver.org/lang/ru/).
 
+## [0.3.0] - 2026-10-19
+
+### Добавлено
+- Сменный детектор: обученная модель (логистическая регрессия) с фолбэком на эвристики
+  (`src/detector/index.ts`, `detect()`).
+- Признаки вынесены в `src/detector/features.ts`, вектор признаков — `src/detector/vector.ts`.
+- Модель и веса: `src/detector/model.ts`, `src/detector/weights.ts` (автогенерация).
+- Скрипт обучения `training/train.mjs` и seed-датасет `training/dataset.jsonl` (120 примеров).
+- Выбор в настройках: **Детектор** — «Модель» или «Эвристики».
+- В debug-лог добавлен источник (`[model]`/`[heuristic]`) и сработавшие признаки.
+
+### Изменено
+- `DETECTOR_VERSION` 2 → 3 (кэш инвалидируется автоматически).
+- Тесты: `tests/model.test.ts`, `tests/detect.test.ts`; всего 40 тестов.
+
 ## [0.2.1] - 2026-10-19
 
 ### Добавлено
@@ -32,6 +47,7 @@
 - Эвристики: шаблонные фразы, ритм предложений, пунктуация, сокращения, длинное тире, списки.
 - Локальный кэш проверок, счётчики и badge, popup и страница настроек.
 
+[0.3.0]: https://github.com/a1phaZ/no-ai-slop/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/a1phaZ/no-ai-slop/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/a1phaZ/no-ai-slop/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/a1phaZ/no-ai-slop/releases/tag/v0.1.0

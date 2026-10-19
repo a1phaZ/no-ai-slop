@@ -9,7 +9,11 @@ function clamp01(value: number): number {
 
 export function normalizeSettings(raw: Partial<Settings> | undefined): Settings {
   const merged = { ...DEFAULT_SETTINGS, ...(raw ?? {}) };
-  return { ...merged, threshold: clamp01(merged.threshold) };
+  return {
+    ...merged,
+    threshold: clamp01(merged.threshold),
+    detector: merged.detector === 'heuristics' ? 'heuristics' : 'model',
+  };
 }
 
 export async function loadSettings(): Promise<Settings> {
