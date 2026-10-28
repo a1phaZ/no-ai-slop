@@ -11,6 +11,11 @@ export function sigmoid(z: number): number {
 /** Версия обученной модели — пишется в метки пользователей. */
 export const MODEL_VERSION = WEIGHTS.version;
 
+/** Идентификатор линейной модели для кэша. */
+export function linearModelId(weights: ModelWeights = WEIGHTS): string {
+  return `linear@${weights.version}`;
+}
+
 /** Модель готова к использованию, если её размерность совпадает с текущим вектором признаков. */
 export function modelAvailable(weights: ModelWeights = WEIGHTS): boolean {
   return (
@@ -43,5 +48,6 @@ export function predictModel(
   }
 
   contributions.sort((a, b) => Math.abs(b.weight) - Math.abs(a.weight));
-  return { score: sigmoid(z), signals: contributions.slice(0, 5) };
+  const temperature = weights.temperature && weights.temperature > 0 ? weights.temperature : 1;
+  return { score: sigmoid(z / temperature), signals: contributions.slice(0, 5) };
 }

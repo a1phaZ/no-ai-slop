@@ -10,6 +10,8 @@
     "watch": "node scripts/build.mjs --watch",
     "package": "node scripts/package.mjs",
     "train": "node training/train.mjs",
+    "train:nn": "node training/train-nn.mjs",
+    "eval": "node training/evaluate.mjs",
     "data:human": "node training/fetch-human.mjs",
     "data:public": "node training/import-public.mjs --hc3",
     "data:ai": "node training/generate-ai.mjs",

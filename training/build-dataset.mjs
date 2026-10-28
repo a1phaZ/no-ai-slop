@@ -3,11 +3,14 @@
 // иначе тест утекает через почти-дубликаты.
 //
 //   node training/build-dataset.mjs
-//   node training/build-dataset.mjs --input=data/raw/all.jsonl --max-per-class=1500
+//   node training/build-dataset.mjs --input=data/raw/all.jsonl,data/raw/user.jsonl
+//   node training/build-dataset.mjs --user-max=500 --user-weight=2
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import {
   DATA_DIR,
+  RAW_DIR,
   detectLang,
   mulberry32,
   number,
@@ -20,24 +23,51 @@ import {
 } from './lib/util.mjs';
 
 const args = parseArgs();
-const input = resolve(String(args.input ?? resolve(DATA_DIR, 'raw/all.jsonl')));
+const defaultInputs = [resolve(RAW_DIR, 'all.jsonl'), resolve(RAW_DIR, 'user.jsonl')].filter(
+  (path) => existsSync(path),
+);
+const inputs = args.input
+  ? String(args.input)
+      .split(',')
+      .map((path) => resolve(path.trim()))
+  : defaultInputs.length > 0
+    ? defaultInputs
+    : [resolve(RAW_DIR, 'all.jsonl')];
 const output = resolve(String(args.out ?? resolve(DATA_DIR, 'dataset.jsonl')));
 const maxPerClass = number(args['max-per-class'], 1500);
+const userMax = number(args['user-max'], 500);
+const userWeightArg = args['user-weight'] === undefined ? null : number(args['user-weight'], 1);
+const userWeight = userWeightArg ?? 1;
 const seed = number(args.seed, 20261019);
 const minLen = number(args['min-len'], 40);
 const maxLen = number(args['max-len'], 6000);
 
-const raw = readJsonl(input);
+const raw = inputs.flatMap((path) => {
+  const rows = readJsonl(path);
+  console.log(`  ${path}: ${rows.length}`);
+  return rows;
+});
 if (raw.length === 0) {
-  console.error(`нет данных: ${input} пуст. Сначала запустите fetch-human / import-public / generate-ai.`);
+  console.error('нет данных: сначала запустите fetch-human / import-public / generate-ai / import-labels.');
   process.exit(1);
 }
 
-const clean = [];
+// Дедуп по хэшу текста. Пользовательская метка важнее автоматической.
+const byHash = new Map();
 for (const row of raw) {
+  const computed = textHash(row.title, row.text);
+  const existing = byHash.get(computed);
+  if (!existing || (row.source === 'user' && existing.source !== 'user')) {
+    byHash.set(computed, row);
+  }
+}
+
+const clean = [];
+for (const row of byHash.values()) {
   const text = String(row.text ?? '').trim();
   if (text.length < minLen || text.length > maxLen) continue;
   if (row.label !== 0 && row.label !== 1) continue;
+  const isUser = row.source === 'user';
   clean.push({
     title: String(row.title ?? '').trim(),
     text,
@@ -50,12 +80,29 @@ for (const row of raw) {
     created_utc: row.created_utc ?? null,
     author_hash: row.author_hash ?? null,
     near_dup: row.near_dup ?? null,
+    hash: row.hash ?? textHash(row.title, row.text),
+    sample_weight: isUser
+      ? (userWeightArg ??
+        (Number.isFinite(Number(row.sample_weight)) && Number(row.sample_weight) > 0
+          ? Number(row.sample_weight)
+          : userWeight))
+      : 1,
   });
 }
 
 if (clean.length === 0) {
   console.error('после фильтрации не осталось строк');
   process.exit(1);
+}
+
+// Ограничиваем вклад пользовательских меток, чтобы они не вытеснили корпус.
+const userRows = clean.filter((row) => row.source === 'user');
+if (userRows.length > userMax) {
+  const keep = new Set(shuffle(userRows, mulberry32(seed ^ 0x51ed270b)).slice(0, userMax));
+  for (let i = clean.length - 1; i >= 0; i--) {
+    if (clean[i].source === 'user' && !keep.has(clean[i])) clean.splice(i, 1);
+  }
+  console.log(`  user: ограничено ${userMax} строками (было ${userRows.length})`);
 }
 
 // Балансировка отдельно по языкам: длинный английский корпус не должен
@@ -82,7 +129,7 @@ if (balanced.length === 0) {
 
 // Групповые сплиты.
 function groupKey(row) {
-  return row.author_hash ?? row.near_dup ?? textHash(row.title, row.text);
+  return row.author_hash ?? row.near_dup ?? row.hash ?? textHash(row.title, row.text);
 }
 
 const groups = new Map();

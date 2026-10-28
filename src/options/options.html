@@ -28,13 +28,14 @@
       <label class="row">
         <span>Детектор</span>
         <select id="detector">
-          <option value="model">Модель (по умолчанию)</option>
+          <option value="model">Модель (NN, по умолчанию)</option>
+          <option value="linear">Линейная модель</option>
           <option value="heuristics">Эвристики</option>
         </select>
       </label>
 
       <label class="row column">
-        <span>Порог уверенности: <b id="thresholdValue">60%</b></span>
+        <span>Порог уверенности: <b id="thresholdValue">55%</b></span>
         <input type="range" id="threshold" min="0" max="100" step="5" />
         <span class="hint">Посты с оценкой выше порога скрываются.</span>
       </label>
@@ -64,6 +65,12 @@
         <p class="hint" id="labelsHint" hidden>Скоро лимит — стоит сделать экспорт.</p>
       </div>
 
+      <div class="row column">
+        <span>Метки: <b id="labelsAi">0</b> «ИИ» · <b id="labelsHuman">0</b> «человек»</span>
+        <span class="hint" id="labelsLangs">—</span>
+        <span class="hint" id="labelsAgreement">—</span>
+      </div>
+
       <div class="row buttons">
         <button type="button" id="exportLabels">Экспорт JSONL</button>
         <button type="button" id="importLabels">Импорт JSONL</button>
@@ -71,6 +78,14 @@
       </div>
       <input type="file" id="importFile" accept=".jsonl,.json,application/jsonl,application/json" hidden />
       <p class="saved" id="labelsStatus" hidden></p>
+
+      <h2>Детектор</h2>
+      <div class="row column">
+        <span>Активная модель: <b id="modelName">—</b></span>
+        <span class="hint" id="modelTrained">—</span>
+        <span class="hint" id="modelMetrics">—</span>
+        <span class="hint" id="modelThreshold">—</span>
+      </div>
 
       <p class="saved" id="saved" hidden>Сохранено</p>
     </main>

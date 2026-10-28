@@ -20,8 +20,12 @@ node training/generate-ai.mjs --model=qwen2.5:3b --count=300 --lang=ru,en
 node training/dedup.mjs
 node training/build-dataset.mjs
 
-# 5. Обучение + метрики по срезам
+# 5. Оценка текущего детектора на test и метках пользователей
+node training/evaluate.mjs
+
+# 6. Обучение: линейная модель и MLP
 node training/train.mjs
+node training/train-nn.mjs
 ```
 
 ## Что делает каждый скрипт
@@ -32,9 +36,11 @@ node training/train.mjs
 | `import-public.mjs` | HC3 `reddit_eli5` через HF datasets-server (без ключей). Плюс `--file=` для вручную скачанных RuATD / SemEval M4. |
 | `generate-ai.mjs` | Ollama. Матрица: язык × тема × длина × регистр + прогон «сделай человечнее». |
 | `dedup.mjs` | Точный дедуп + SimHash (почти-дубликаты), даёт `near_dup` кластеры. |
-| `build-dataset.mjs` | Балансировка по языкам и классам, групповые сплиты train/val/test. |
-| `import-labels.mjs` | Экспорт меток из расширения → `data/eval/user.jsonl` (только оценка). |
-| `train.mjs` | Логистическая регрессия, порог по валидации, метрики по срезам, Brier/ECE. |
+| `build-dataset.mjs` | Балансировка по языкам и классам, дедуп, групповые сплиты train/val/test. Подхватывает `data/raw/user.jsonl`. |
+| `import-labels.mjs` | Экспорт меток из расширения → `data/eval/user.jsonl` (eval) или `data/raw/user.jsonl` (train). |
+| `evaluate.mjs` | Метрики текущего детектора на test и eval-метках: confusion matrix, Brier/ECE, срезы, sweep порога, топ ошибок. |
+| `train.mjs` | Линейная модель: L2, temperature scaling, precision-first порог, метрики по срезам. |
+| `train-nn.mjs` | MLP 20 → hidden → 1: early stopping, temperature scaling, precision-first порог. |
 
 ## Схема строки
 
@@ -65,13 +71,30 @@ node training/train.mjs
 Экспорт из настроек расширения:
 
 ```bash
+# только оценка на реальных данных, в обучение не попадает
 node training/import-labels.mjs --file=~/Downloads/no-ai-slop-labels-20261019.jsonl
+
+# после ~200 меток — можно добавить в обучение
+node training/import-labels.mjs --file=... --mode=train --user-weight=2
 ```
 
-Пока меток мало, они идут **только в eval** (`data/eval/user.jsonl`): это честная
-проверка на «настоящей жизни», а не подмешивание в обучение. Когда наберётся
-достаточно — можно будет добавить их в train, но с групповыми сплитами и
-фильтром по `source`.
+- По умолчанию (`--mode=eval`) метки идут в `data/eval/user.jsonl`: это честная
+  проверка на «настоящей жизни», а не подмешивание в обучение.
+- `--mode=train` пишет `data/raw/user.jsonl`. Пока меток меньше 200, скрипт
+  всё равно оставляет их в eval; `--force` снимает предохранитель.
+- `build-dataset.mjs` подхватывает `data/raw/user.jsonl` автоматически, дедупит
+  по тексту и назначает групповые сплиты. Пользовательские строки получают
+  `source=user` и `sample_weight` (по умолчанию 1, задаётся `--user-weight`).
+- Метки не отправляются автоматически: только ручной экспорт JSONL.
+
+## Калибровка и порог
+
+- Вероятности калибруются temperature scaling на validation (`temperature` в весах).
+- Порог выбирается **precision-first**: максимум recall при precision ≥ 0.9
+  (`--min-precision`). Если такого порога нет — откат на максимум F1.
+- `evaluate.mjs` печатает Brier/ECE, sweep порога и срезы по языку, источнику
+  и длине текста. Отчёт — `data/eval/report.json` без текстов постов.
+- Рекомендуемый порог виден в настройках расширения в карточке модели.
 
 ## Ограничения
 

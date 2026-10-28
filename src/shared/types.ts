@@ -1,6 +1,6 @@
 export type HideMode = 'blur' | 'hide';
 
-export type DetectorMode = 'model' | 'heuristics';
+export type DetectorMode = 'model' | 'linear' | 'heuristics';
 
 export interface Settings {
   enabled: boolean;
@@ -37,6 +37,8 @@ export interface DetectionResult {
   source: DetectionSource;
   textLength: number;
   version: number;
+  /** Конкретная модель: `nn@N`, `linear@N` или `heuristic@N`. */
+  modelId: string;
 }
 
 export interface CacheEntry {
@@ -46,6 +48,8 @@ export interface CacheEntry {
   manual: boolean;
   checkedAt: number;
   version: number;
+  /** Идентификатор модели, которой получена оценка (`nn@N`/`linear@N`/...). */
+  model: string;
 }
 
 /** Явная метка пользователя. */
@@ -67,6 +71,8 @@ export interface LabelEntry {
   score: number;
   detectorVersion: number;
   modelVersion: number;
+  /** Идентификатор модели, если известен (`nn@N`/`linear@N`). */
+  modelId?: string;
   lang: LabelLanguage;
   length: number;
   createdAt: number;

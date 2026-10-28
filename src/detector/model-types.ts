@@ -12,6 +12,10 @@ export interface ModelMetrics {
   brier?: number;
   /** Expected Calibration Error. */
   ece?: number;
+  /** Как выбирался порог: precision-first или F1-фолбэк. */
+  thresholdStrategy?: 'precision' | 'f1';
+  /** Целевая precision при выборе порога. */
+  minPrecision?: number;
 }
 
 /** Веса линейной модели: стандартизация + логистическая регрессия. */
@@ -23,6 +27,9 @@ export interface ModelWeights {
   std: number[];
   weights: number[];
   bias: number;
+  /** Temperature scaling: p = sigmoid(z / temperature). */
+  temperature?: number;
+  /** Рекомендуемый порог, выбранный на валидации. */
   threshold: number;
   metrics: ModelMetrics;
 }

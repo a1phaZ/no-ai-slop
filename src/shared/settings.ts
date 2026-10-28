@@ -12,7 +12,10 @@ export function normalizeSettings(raw: Partial<Settings> | undefined): Settings 
   return {
     ...merged,
     threshold: clamp01(merged.threshold),
-    detector: merged.detector === 'heuristics' ? 'heuristics' : 'model',
+    detector:
+      merged.detector === 'heuristics' || merged.detector === 'linear'
+        ? merged.detector
+        : 'model',
   };
 }
 

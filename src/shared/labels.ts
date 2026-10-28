@@ -19,6 +19,7 @@ export interface LabelInput {
   score: number;
   detectorVersion: number;
   modelVersion: number;
+  modelId?: string;
 }
 
 export function buildLabelEntry(input: LabelInput, createdAt = Date.now()): LabelEntry {
@@ -30,6 +31,7 @@ export function buildLabelEntry(input: LabelInput, createdAt = Date.now()): Labe
     score: input.score,
     detectorVersion: input.detectorVersion,
     modelVersion: input.modelVersion,
+    modelId: input.modelId,
     lang: detectLang(`${input.title}\n${input.text}`),
     length: input.text.length,
     createdAt,

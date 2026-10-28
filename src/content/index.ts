@@ -11,7 +11,7 @@ import {
   type LabelValue,
   type Settings,
 } from '../shared/types.ts';
-import { MODEL_VERSION, detect } from '../detector/index.ts';
+import { MODEL_VERSION, NN_MODEL_VERSION, detect, modelIdFor } from '../detector/index.ts';
 import { cacheKey, isFresh, makeEntry } from '../detector/cache.ts';
 import { collectPosts, type PostNode } from './reddit.ts';
 import { renderControl, type Applied } from './ui.ts';
@@ -58,11 +58,12 @@ interface Analysis {
 
 function analyze(text: string): Analysis {
   const key = cacheKey(text);
+  const modelId = modelIdFor(runtime.settings.detector);
   const cached = runtime.cache[key];
-  if (isFresh(cached)) return { entry: cached, fresh: null };
+  if (isFresh(cached, modelId)) return { entry: cached, fresh: null };
 
   const result = detect(text, runtime.settings.detector);
-  const entry = makeEntry(key, result.score);
+  const entry = makeEntry(key, result.score, result.modelId);
   runtime.cache[key] = entry;
   persistCacheSoon();
   return { entry, fresh: result };
@@ -96,7 +97,8 @@ function labelPost(post: PostNode, entry: CacheEntry, value: LabelValue | null):
     label: value ?? previous?.label ?? 'human',
     score: entry.score,
     detectorVersion: DETECTOR_VERSION,
-    modelVersion: MODEL_VERSION,
+    modelVersion: entry.model.startsWith('nn@') ? NN_MODEL_VERSION : MODEL_VERSION,
+    modelId: entry.model,
   });
 
   const result = upsertLabel([...runtime.labels.values()], labelEntry, value);

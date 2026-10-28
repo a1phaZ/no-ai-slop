@@ -8,7 +8,10 @@ import {
   saveStats,
 } from '../shared/storage.ts';
 import { exportFilename, labelsToJsonl, parseLabels } from '../shared/labels.ts';
-import type { DetectorMode, HideMode, Settings } from '../shared/types.ts';
+import { DETECTOR_VERSION, type DetectorMode, type HideMode, type Settings } from '../shared/types.ts';
+import { WEIGHTS } from '../detector/weights.ts';
+import { NN_WEIGHTS } from '../detector/nn-weights.ts';
+import { NN_MODEL_VERSION, nnAvailable } from '../detector/nn.ts';
 
 function el<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -27,8 +30,11 @@ function flashSaved(): void {
   }, 1500);
 }
 
-function persist(patch: Partial<Settings>): void {
-  void saveSettings(patch).then(flashSaved);
+function persist(patch: Partial<Settings>): Promise<Settings> {
+  return saveSettings(patch).then((next) => {
+    flashSaved();
+    return next;
+  });
 }
 
 let statusTimer: number | undefined;
@@ -44,7 +50,8 @@ function setStatus(message: string, isError = false): void {
   }, 4000);
 }
 
-async function renderLabelStats(): Promise<void> {
+async function renderLabelStats(settings?: Settings): Promise<void> {
+  const current = settings ?? (await loadSettings());
   const labels = await loadLabels();
   const count = labels.length;
   el('labelsCount').textContent = String(count);
@@ -57,6 +64,87 @@ async function renderLabelStats(): Promise<void> {
   const ratio = count / LABELS_MAX;
   el('labelsWarning').hidden = ratio < 1;
   el('labelsHint').hidden = ratio < 0.8 || ratio >= 1;
+
+  const ai = labels.filter((label) => label.label === 'ai').length;
+  el('labelsAi').textContent = String(ai);
+  el('labelsHuman').textContent = String(count - ai);
+
+  const byLang: Record<string, number> = { ru: 0, en: 0, other: 0 };
+  for (const label of labels) byLang[label.lang] = (byLang[label.lang] ?? 0) + 1;
+  el('labelsLangs').textContent =
+    `Языки: ru ${byLang.ru ?? 0} · en ${byLang.en ?? 0} · other ${byLang.other ?? 0}`;
+
+  if (count === 0) {
+    el('labelsAgreement').textContent = '—';
+  } else {
+    const agree = labels.filter(
+      (label) => (label.label === 'ai') === (label.score >= current.threshold),
+    ).length;
+    el('labelsAgreement').textContent =
+      `С текущим порогом ${Math.round(current.threshold * 100)}% совпадает: ` +
+      `${agree} из ${count} (${Math.round((agree / count) * 100)}%)`;
+  }
+}
+
+/** Карточка активной модели: версия, дата обучения, метрики и рекомендованный порог. */
+function renderModelInfo(settings: Settings): void {
+  const useNn = settings.detector === 'model' && nnAvailable();
+  const useLinear =
+    settings.detector === 'linear' || (settings.detector === 'model' && !nnAvailable());
+
+  let name = 'Эвристики';
+  let version = DETECTOR_VERSION;
+  let trainedAt = '';
+  let metrics: {
+    accuracy: number;
+    precision: number;
+    recall: number;
+    f1: number;
+    brier?: number;
+    ece?: number;
+  } | null = null;
+  let recommended: number | null = null;
+
+  if (useNn) {
+    name = 'Нейросеть (MLP)';
+    version = NN_MODEL_VERSION;
+    trainedAt = NN_WEIGHTS.trainedAt;
+    metrics = NN_WEIGHTS.metrics;
+    recommended = NN_WEIGHTS.threshold;
+  } else if (useLinear) {
+    name = 'Линейная модель';
+    version = WEIGHTS.version;
+    trainedAt = WEIGHTS.trainedAt;
+    metrics = WEIGHTS.metrics;
+    recommended = WEIGHTS.threshold;
+  }
+
+  el('modelName').textContent = `${name} · v${version}`;
+  el('modelTrained').textContent = trainedAt
+    ? `Обучена: ${new Date(trainedAt).toLocaleString('ru-RU')}`
+    : 'Правила, без обучения';
+
+  if (metrics) {
+    const pct = (value: number) => `${Math.round(value * 100)}%`;
+    const calibration = [
+      metrics.brier === undefined ? '' : `Brier ${metrics.brier.toFixed(3)}`,
+      metrics.ece === undefined ? '' : `ECE ${metrics.ece.toFixed(3)}`,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    el('modelMetrics').textContent =
+      `test: acc ${pct(metrics.accuracy)} · prec ${pct(metrics.precision)} · ` +
+      `rec ${pct(metrics.recall)} · F1 ${pct(metrics.f1)}` +
+      (calibration ? ` · ${calibration}` : '');
+  } else {
+    el('modelMetrics').textContent = 'Метрики не применимы к эвристикам';
+  }
+
+  const current = `в настройках ${Math.round(settings.threshold * 100)}%`;
+  el('modelThreshold').textContent =
+    recommended === null
+      ? `Порог: ${current}`
+      : `Рекомендуемый порог: ${Math.round(recommended * 100)}% · ${current}`;
 }
 
 function download(content: string, filename: string): void {
@@ -131,7 +219,8 @@ async function render(): Promise<void> {
   range.value = String(Math.round(settings.threshold * 100));
   el('thresholdValue').textContent = `${Math.round(settings.threshold * 100)}%`;
 
-  await renderLabelStats();
+  renderModelInfo(settings);
+  await renderLabelStats(settings);
 }
 
 function wire(): void {
@@ -144,7 +233,12 @@ function wire(): void {
   });
 
   el<HTMLSelectElement>('detector').addEventListener('change', (e) => {
-    persist({ detector: (e.target as HTMLSelectElement).value as DetectorMode });
+    void persist({ detector: (e.target as HTMLSelectElement).value as DetectorMode }).then(
+      (next) => {
+        renderModelInfo(next);
+        void renderLabelStats(next);
+      },
+    );
   });
 
   el<HTMLInputElement>('scanOldReddit').addEventListener('change', (e) => {
@@ -160,7 +254,9 @@ function wire(): void {
     el('thresholdValue').textContent = `${range.value}%`;
   });
   range.addEventListener('change', () => {
-    persist({ threshold: Number(range.value) / 100 });
+    void persist({ threshold: Number(range.value) / 100 }).then((next) => {
+      void renderLabelStats(next);
+    });
   });
 
   el<HTMLButtonElement>('exportLabels').addEventListener('click', () => {
