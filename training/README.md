@@ -3,42 +3,62 @@
 Всё локально: скрипты ходят в сеть только за данными, обучение и хранение — на машине.
 Результаты пишутся в `data/` (в git не попадает — там реальный контент Reddit).
 
-## Быстрый старт (MVP)
+## Быстрый старт (публичные данные)
+
+Основной путь — публичные датасеты: они собираются за минуты и не требуют
+Ollama, GPU или чужих меток. Reddit-посты добавляют доменное совпадение, но
+arctic-shift медленный и нестабильный, поэтому это опциональный шаг.
 
 ```bash
-# 1. Человеческие посты Reddit до эпохи ChatGPT (без ключей)
-node training/fetch-human.mjs --subreddits=rust,AskReddit --max-per-sub=300
-
-# 2. Публичный датасет: реальные вопросы Reddit + ответы ChatGPT
+# 1. EN: реальные вопросы Reddit + ответы ChatGPT (HC3)
 node training/import-public.mjs --hc3 --max=1500
 
-# 3. AI-посты локально через Ollama (поставьте модели заранее)
-ollama pull qwen2.5:3b
-node training/generate-ai.mjs --model=qwen2.5:3b --count=300 --lang=ru,en
+# 2. RU: CoAT/RuATD, human vs machine
+node training/import-public.mjs --coat --coat-split=train --max=2000
 
-# 4. Дедуп, баланс, групповые сплиты
+# 3. Опционально: SemEval-2024 Task 8 (мультиязычный human vs machine)
+#    В train строки сгруппированы по генератору, поэтому для human нужен offset.
+node training/import-public.mjs --semeval --semeval-split=train --semeval-offset=2000 --max=3000
+
+# 4. Опционально: человеческие посты Reddit до 11.2022.
+#    Идём часовыми окнами; для «тяжёлых» сабреддитов limit=3 и delay=5000.
+node training/fetch-human.mjs \
+  --subreddits=rust,AskReddit,Pikabu,AskARussian \
+  --window-minutes=60 --max-windows=48 --limit=3 --delay=5000 --max-per-sub=300
+
+# 5. Дедуп, баланс, групповые сплиты
 node training/dedup.mjs
 node training/build-dataset.mjs
 
-# 5. Оценка текущего детектора на test и метках пользователей
-node training/evaluate.mjs
+# 6. Внешняя оценка на отложенных публичных наборах
+node training/import-public.mjs --coat --coat-split=validation --out=data/eval/coat-val.jsonl
+node training/import-public.mjs --semeval --semeval-split=test --max=600 --out=data/eval/semeval-test.jsonl
+node training/evaluate.mjs --input=data/eval/coat-val.jsonl --all --modes=model,linear
 
-# 6. Обучение: линейная модель и MLP
+# 7. Обучение: линейная модель и MLP
 node training/train.mjs
 node training/train-nn.mjs
+```
+
+Ollama нужен только если после внешней оценки видно доменный разрыв и хочется
+добавить AI-посты, сгенерированные из реальных человеческих промптов:
+
+```bash
+ollama pull qwen2.5:3b
+node training/generate-ai.mjs --model=qwen2.5:3b --count=300 --lang=ru,en
 ```
 
 ## Что делает каждый скрипт
 
 | скрипт | назначение |
 |---|---|
-| `fetch-human.mjs` | arctic-shift (зеркало Pushshift). Только посты **до 11.2022**, чтобы в «человеческих» данных не было ChatGPT. Фильтрует ботов, удалённые и слишком короткие посты. |
-| `import-public.mjs` | HC3 `reddit_eli5` через HF datasets-server (без ключей). Плюс `--file=` для вручную скачанных RuATD / SemEval M4. |
-| `generate-ai.mjs` | Ollama. Матрица: язык × тема × длина × регистр + прогон «сделай человечнее». |
+| `fetch-human.mjs` | arctic-shift (зеркало Pushshift). Только посты **до 11.2022**, чтобы в «человеческих» данных не было ChatGPT. Часовые окна, `--limit`, `--max-windows`, `--out`; фильтрует ботов, удалённые, короткие и link-only посты. |
+| `import-public.mjs` | HF datasets-server без ключей: HC3 (`--hc3`), CoAT/RuATD (`--coat`), SemEval-2024 Task 8 (`--semeval`). Плюс `--file=` для ручного импорта. Поддерживает `--out`, `--offset` и retry на 429. |
+| `generate-ai.mjs` | Ollama, опционально. Матрица: язык × тема × длина × регистр + прогон «сделай человечнее». |
 | `dedup.mjs` | Точный дедуп + SimHash (почти-дубликаты), даёт `near_dup` кластеры. |
-| `build-dataset.mjs` | Балансировка по языкам и классам, дедуп, групповые сплиты train/val/test. Подхватывает `data/raw/user.jsonl`. |
+| `build-dataset.mjs` | Балансировка по языкам и классам, дедуп, групповые сплиты train/val/test. Подхватывает `data/raw/user.jsonl`; `prompt_id` держит вопрос HC3 и ответы в одной группе. |
 | `import-labels.mjs` | Экспорт меток из расширения → `data/eval/user.jsonl` (eval) или `data/raw/user.jsonl` (train). |
-| `evaluate.mjs` | Метрики текущего детектора на test и eval-метках: confusion matrix, Brier/ECE, срезы, sweep порога, топ ошибок. |
+| `evaluate.mjs` | Метрики текущего детектора на test и eval-метках: confusion matrix, Brier/ECE, срезы, sweep порога, топ ошибок. `--all` — оценить весь внешний набор. |
 | `train.mjs` | Линейная модель: L2, temperature scaling, precision-first порог, метрики по срезам. |
 | `train-nn.mjs` | MLP 20 → hidden → 1: early stopping, temperature scaling, precision-first порог. |
 
@@ -54,19 +74,35 @@ node training/train-nn.mjs
 
 Если резать случайно, почти-дубликаты и посты одного автора попадут и в train,
 и в test — метрики станут красивыми и бесполезными. `build-dataset.mjs` кладёт
-целую группу (`author_hash` → `near_dup` → текст) в один сплит.
+целую группу (`prompt_id` → `author_hash` → `near_dup` → текст) в один сплит.
+Для HC3 `prompt_id` — это хэш вопроса, поэтому вопрос и ответы на него не
+разъезжаются по разным сплитам.
 
 ## Ловушки, которые уже проверены
 
 - **HC3 в одиночку бесполезен для обучения.** Вопросы там короткие, ответы ChatGPT —
   длинные, модель учится на длине и выдаёт идеальные метрики. Поэтому по умолчанию
-  импортируются и человеческие ответы (`--no-answers` отключает), а основной
-  источник human — реальные посты Reddit.
-- **Зеркало arctic-shift медленное и с rate-limit.** Скрипт идёт окнами по дню,
-  делает паузы и ретраи. Если сыпет `Timeout` — увеличьте `--delay`.
+  импортируются и человеческие ответы (`--no-answers` отключает), а HC3 лучше
+  смешивать с CoAT/SemEval и Reddit-постами.
+- **CoAT и SemEval — другой домен.** Это news/wiki/HowTo, а не Reddit. Они быстро
+  дают EN+RU и хороши для bootstrap, но внешняя оценка на CoAT validation /
+  SemEval test обязательна: пилот показал заметный domain gap.
+- **SemEval train отсортирован по генератору.** Первые ~2000 строк — AI. Чтобы
+  получить human, используйте `--semeval-offset=2000` или импортируйте больше
+  строк; `--max` считает уже добавленные строки, а не прочитанные.
+- **HF datasets-server отдаёт 429.** `import-public.mjs` повторяет запросы с
+  экспоненциальной паузой; при обрыве можно запустить снова — дедуп пропустит
+  уже скачанное.
+- **Зеркало arctic-shift медленное и с rate-limit.** Часовые окна работают лучше
+  дневных, но высоконагруженные сабреддиты всё равно могут отваливаться. Если
+  сыпет `Timeout` — уменьшите `--limit` (например, до 3) и увеличьте `--delay`.
+  Link-only посты отбрасываются: у них нет текста для детектора.
 - **8B на CPU без GPU — это ночь.** 3B терпимо. Разные модели важнее размера.
 
-## Метки пользователей
+## Метки пользователей (опционально)
+
+Метки больше не критический путь: базовый датасет собирается из публичных
+источников. Свои метки полезны для локальной проверки и персонализации.
 
 Экспорт из настроек расширения:
 

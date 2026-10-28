@@ -62,10 +62,19 @@ for (const row of raw) {
   }
 }
 
+function hasBody(text) {
+  const withoutUrls = String(text ?? '')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .trim();
+  return withoutUrls.length >= minLen;
+}
+
 const clean = [];
 for (const row of byHash.values()) {
   const text = String(row.text ?? '').trim();
   if (text.length < minLen || text.length > maxLen) continue;
+  if (!hasBody(text)) continue;
   if (row.label !== 0 && row.label !== 1) continue;
   const isUser = row.source === 'user';
   clean.push({
@@ -129,7 +138,8 @@ if (balanced.length === 0) {
 
 // Групповые сплиты.
 function groupKey(row) {
-  return row.author_hash ?? row.near_dup ?? row.hash ?? textHash(row.title, row.text);
+  // prompt_id держит вместе вопрос HC3 и ответы на него.
+  return row.prompt_id ?? row.author_hash ?? row.near_dup ?? row.hash ?? textHash(row.title, row.text);
 }
 
 const groups = new Map();

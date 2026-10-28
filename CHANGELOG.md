@@ -14,6 +14,14 @@
   `build-dataset` подхватывает `data/raw/user.jsonl`, дедуп и `sample_weight`.
 - Карточка активной модели и разбивка меток (ИИ/человек, языки, согласие с порогом)
   в настройках.
+- Публичный EN+RU датасет без ключей: `import-public.mjs --coat` (CoAT/RuATD) и
+  `--semeval` (SemEval-2024 Task 8), плюс `--out`, `--offset` и retry на 429.
+- `fetch-human.mjs`: часовые окна, `--limit`, `--max-windows`, `--out`; link-only
+  посты и URL-мусор отбрасываются до обучения.
+- `build-dataset.mjs`: группировка HC3 по `prompt_id` (вопрос и ответы не
+  разъезжаются по сплитам) и фильтр текста без body.
+- `evaluate.mjs --all`: оценка всего внешнего набора (CoAT validation, SemEval test)
+  без случайного test-сплита.
 
 ### Изменено
 - Размытие и скрытие применяются к телу поста, а не к заголовку. У link/image-постов
@@ -24,6 +32,9 @@
 - Калибровка: temperature scaling вместо сдвига bias, precision-first порог
   (`--min-precision`, по умолчанию 0.9).
 - Кэш инвалидируется при смене модели (`nn@N`/`linear@N`/`heuristic@N`).
+- Датасет теперь public-first: HC3 + CoAT/SemEval — основной путь, Reddit и
+  Ollama — опциональные источники доменного совпадения; метки пользователей
+  больше не блокируют Phase 2.
 
 ## [0.4.0] - 2026-10-19
 

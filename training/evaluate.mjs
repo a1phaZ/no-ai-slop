@@ -2,6 +2,7 @@
 //
 //   node training/evaluate.mjs
 //   node training/evaluate.mjs --input=data/dataset.jsonl --user=data/eval/user.jsonl
+//   node training/evaluate.mjs --input=data/eval/coat-val.jsonl --all
 //   node training/evaluate.mjs --modes=model,linear,heuristics --threshold=0.55
 //
 // Пишет data/eval/report.json (без текстов постов — только хэши и оценки).
@@ -47,7 +48,9 @@ if (dataset.length === 0) {
 }
 
 // Для собранного датасета берём test-сплит; для seed — его случайный test.
-const { test: testIdx } = splitIndices(dataset);
+// --all нужен для внешних наборов без поля split (CoAT validation, SemEval test).
+const { test: splitTestIdx } = splitIndices(dataset);
+const testIdx = args.all ? dataset.map((_, i) => i) : splitTestIdx;
 const testRows = testIdx.map((i) => dataset[i]);
 const testIndices = testRows.map((_, i) => i);
 
@@ -103,7 +106,7 @@ function evaluate(rows, indices, mode, threshold) {
     mode,
     modelIds,
     threshold,
-    n: rows.length,
+    n: indices.length,
     metrics: m,
     calibration: cal,
     recommendedThreshold: picked,

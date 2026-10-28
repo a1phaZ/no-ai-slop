@@ -1,10 +1,12 @@
 // Сбор реальных человеческих постов Reddit до эпохи ChatGPT (до 11.2022).
 // Источник: arctic-shift (публичное зеркало Pushshift), без ключей и регистрации.
 //
-//   node training/fetch-human.mjs --subreddits=rust,AskReddit --days=1 --max-per-sub=200
+//   node training/fetch-human.mjs --subreddits=rust,AskReddit --max-per-sub=200
+//   node training/fetch-human.mjs --window-minutes=60 --max-windows=48 --delay=1000
+//   node training/fetch-human.mjs --limit=3 --delay=5000  # для «тяжёлых» сабреддитов
 //
 // Ограничения зеркала: rate-limit и медленные запросы на больших диапазонах,
-// поэтому по умолчанию идём окнами по одному дню с паузами и ретраями.
+// поэтому идём небольшими окнами (по умолчанию 1 час) с паузами и ретраями.
 import { appendJsonl, authorHash, detectLang, ensureDir, normalize, number, parseArgs, RAW_DIR, readJsonl, sleep, textHash, printDist } from './lib/util.mjs';
 import { resolve } from 'node:path';
 
@@ -22,20 +24,24 @@ const after = String(args.after ?? '2021-01-01T00:00:00Z');
 const before = String(args.before ?? '2022-11-01T00:00:00Z');
 const maxPerSub = number(args['max-per-sub'], 500);
 const minLen = number(args['min-len'], 80);
+const pageLimit = Math.min(100, Math.max(1, number(args.limit, 100)));
 const delay = number(args.delay, 4000);
-const out = resolve(RAW_DIR, 'human.jsonl');
+const windowMinutes = Math.max(1, number(args['window-minutes'], 60));
+const maxWindows = number(args['max-windows'], 0);
+const out = resolve(String(args.out ?? resolve(RAW_DIR, 'human.jsonl')));
 const allowNsfw = Boolean(args['allow-nsfw']);
+const startedAt = Date.now();
 
 ensureDir(RAW_DIR);
 
-const DAY = 24 * 60 * 60 * 1000;
+const WINDOW_MS = windowMinutes * 60 * 1000;
 
-function dayWindows(fromIso, toIso) {
+function timeWindows(fromIso, toIso) {
   const windows = [];
   let cursor = Date.parse(fromIso);
   const end = Date.parse(toIso);
   while (cursor < end) {
-    const next = Math.min(cursor + DAY, end);
+    const next = Math.min(cursor + WINDOW_MS, end);
     windows.push([new Date(cursor).toISOString(), new Date(next).toISOString()]);
     cursor = next;
   }
@@ -61,13 +67,23 @@ async function fetchPage(params, attempt = 0) {
   }
 }
 
+/** Убирает URL/картинки: link-посты не должны попадать в текстовый датасет. */
+function stripUrls(text) {
+  return normalize(
+    String(text ?? '')
+      .replace(/https?:\/\/\S+/gi, ' ')
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, ' $1 ')
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, ' $1 '),
+  );
+}
+
 function isUsable(post) {
   if (!post || typeof post.selftext !== 'string') return false;
   if (post.stickied || post.archived) return false;
   if (post.over_18 && !allowNsfw) return false;
   const author = post.author ?? '';
   if (!author || author === '[deleted]' || author === 'AutoModerator') return false;
-  const body = normalize(post.selftext);
+  const body = stripUrls(post.selftext);
   const title = normalize(post.title);
   if (body.length < minLen) return false;
   if (title.length < 5) return false;
@@ -78,7 +94,7 @@ function isUsable(post) {
 
 function toRow(post) {
   const title = normalize(post.title);
-  const text = normalize(post.selftext);
+  const text = stripUrls(post.selftext);
   return {
     title,
     text,
@@ -99,14 +115,17 @@ let written = existing.length;
 
 for (const subreddit of subreddits) {
   let total = 0;
-  const windows = dayWindows(after, before);
+  const windows = timeWindows(after, before);
 
+  let windowCount = 0;
   for (const [from, to] of windows) {
     if (total >= maxPerSub) break;
+    if (maxWindows > 0 && windowCount >= maxWindows) break;
+    windowCount += 1;
 
     let posts;
     try {
-      posts = await fetchPage({ subreddit, after: from, before: to, limit: 100, sort: 'asc' });
+      posts = await fetchPage({ subreddit, after: from, before: to, limit: pageLimit, sort: 'asc' });
     } catch (err) {
       console.warn(`  ${subreddit} ${from.slice(0, 10)}: пропуск (${err.message})`);
       continue;
@@ -135,5 +154,8 @@ for (const subreddit of subreddits) {
 }
 
 const all = readJsonl(out);
-printDist('human.jsonl', all);
-console.log(`добавлено: ${written - existing.length}, файл: ${out}`);
+printDist(out.split(/[\\/]/).pop() ?? 'human.jsonl', all);
+const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+console.log(
+  `добавлено: ${written - existing.length}, всего: ${all.length}, окно: ${windowMinutes} мин, время: ${elapsed}с, файл: ${out}`,
+);
