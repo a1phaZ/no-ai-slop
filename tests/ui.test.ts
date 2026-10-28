@@ -64,6 +64,57 @@ test('режим hide скрывает пост, режим blur — размы�
   assert.equal(blur.post.classList.contains('nas-blur'), true);
 });
 
+test('blur применяется к телу, заголовок и пост не трогает', () => {
+  const { window, post } = setup();
+  const title = window.document.createElement('h1');
+  const body = window.document.createElement('div');
+  post.append(title, body);
+
+  const info = render(post as unknown as HTMLElement, {
+    score: 0.9,
+    hidden: true,
+    target: body as unknown as HTMLElement,
+  });
+
+  assert.equal(body.classList.contains('nas-blur'), true);
+  assert.equal(title.classList.contains('nas-blur'), false);
+  assert.equal(post.classList.contains('nas-blur'), false);
+
+  info.remove();
+  assert.equal(body.classList.contains('nas-blur'), false);
+});
+
+test('hide скрывает переданную цель, а не весь пост', () => {
+  const { window, post } = setup();
+  const title = window.document.createElement('h1');
+  const body = window.document.createElement('div');
+  post.append(title, body);
+
+  render(post as unknown as HTMLElement, {
+    score: 0.9,
+    hidden: true,
+    mode: 'hide',
+    target: body as unknown as HTMLElement,
+  });
+
+  assert.equal(body.classList.contains('nas-hidden'), true);
+  assert.equal(title.classList.contains('nas-hidden'), false);
+  assert.equal(post.classList.contains('nas-hidden'), false);
+});
+
+test('если скрывать нечего, пост не трогается и нет кнопки «Показать»', () => {
+  const { post } = setup();
+  const info = render(post as unknown as HTMLElement, {
+    score: 0.9,
+    hidden: true,
+    target: null,
+  });
+
+  assert.equal(post.classList.contains('nas-blur'), false);
+  assert.equal(post.classList.contains('nas-hidden'), false);
+  assert.equal(labelButton(info.bar, 'Показать'), undefined);
+});
+
 test('«Показать» снимает скрытие и убирает себя', () => {
   const { post } = setup();
   const info = render(post as unknown as HTMLElement, { score: 0.9, hidden: true });

@@ -9,6 +9,12 @@ export interface ControlOptions {
   hidden: boolean;
   mode: HideMode;
   /**
+   * Элемент, который размывается/скрывается (тело поста, медиа-превью).
+   * `null` — скрывать нечего, заголовок не трогаем.
+   * Не задан — сам пост (обратная совместимость).
+   */
+  target?: HTMLElement | null;
+  /**
    * null — метка снята повторным кликом.
    * ok=false — сохранить не удалось (например, лимит), состояние не меняем.
    */
@@ -51,17 +57,19 @@ export function renderControl(el: HTMLElement, opts: ControlOptions): Applied {
   score.className = 'nas-score';
   score.textContent = `AI ~${Math.round(opts.score * 100)}%`;
 
+  const target = opts.target === undefined ? el : opts.target;
+
   let hidden = opts.hidden;
   let revealed = el.dataset.nasRevealed === '1';
 
-  const clearHidden = () => el.classList.remove('nas-blur', 'nas-hidden');
+  const clearHidden = () => target?.classList.remove('nas-blur', 'nas-hidden');
   const applyHidden = () => {
-    if (!hidden || revealed) {
+    if (!hidden || revealed || !target) {
       clearHidden();
       return;
     }
-    el.classList.toggle('nas-hidden', opts.mode === 'hide');
-    el.classList.toggle('nas-blur', opts.mode === 'blur');
+    target.classList.toggle('nas-hidden', opts.mode === 'hide');
+    target.classList.toggle('nas-blur', opts.mode === 'blur');
   };
 
   const reveal = () => {
@@ -72,7 +80,7 @@ export function renderControl(el: HTMLElement, opts: ControlOptions): Applied {
 
   bar.append(score);
 
-  if (opts.hidden) {
+  if (opts.hidden && target) {
     const show = button('Показать', () => {
       reveal();
       show.remove();

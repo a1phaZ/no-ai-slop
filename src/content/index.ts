@@ -134,16 +134,20 @@ function processPost(post: PostNode): void {
 
   const { entry, fresh } = analyze(text);
   const label = runtime.labels.get(entry.hash)?.label ?? null;
-  const hidden = shouldHide(entry, label);
+  const canHide = post.contentEl !== null;
+  const decideHidden = (value: LabelValue | null): boolean =>
+    canHide && shouldHide(entry, value);
+  const hidden = decideHidden(label);
 
   const info = renderControl(post.el, {
+    target: post.contentEl,
     score: entry.score,
     label,
     hidden,
     mode: runtime.settings.mode,
     onLabel: (value) => {
       if (!labelPost(post, entry, value)) return { ok: false, hidden };
-      return { ok: true, hidden: shouldHide(entry, value) };
+      return { ok: true, hidden: decideHidden(value) };
     },
   });
   applied.set(post.el, info);
